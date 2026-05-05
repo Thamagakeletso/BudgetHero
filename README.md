@@ -78,7 +78,7 @@ A personal budget tracking Android app built with Jetpack Compose and RoomDB.
 
 \## Demo Video
 
-\[Add YouTube link here after recording]
+\[https://youtu.be/n69L3euk8lA?si=ZGXz63wy6LfVM\_A6]
 
 
 
