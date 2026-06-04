@@ -1,5 +1,6 @@
 package com.example.budgethero.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,44 +13,42 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.budgethero.data.database.BudgetDatabase
-import com.example.budgethero.data.database.Category
-import com.example.budgethero.data.repository.BudgetRepository
-import com.example.budgethero.data.session.SessionManager
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgethero.ui.theme.*
-import kotlinx.coroutines.launch
+import com.example.budgethero.ui.viewmodels.ReportViewModel
 
-// Holds category name + total for display
+/**
+ * Data class holding category name and total spending.
+ * Used by both ReportScreen and ReportViewModel.
+ */
 data class CategoryTotal(
     val categoryName: String,
     val total: Double
 )
 
+/**
+ * ReportScreen displays spending totals per category for a selected period.
+ * Compares totals against monthly min/max goals.
+ * Uses ReportViewModel following MVVM pattern.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReportScreen() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val repository = BudgetRepository(BudgetDatabase.getDatabase(context))
-    val sessionManager = SessionManager(context)
-    val userId = sessionManager.getUserId()
+fun ReportScreen(
+    reportViewModel: ReportViewModel = viewModel()
+) {
+    // Collect state from ViewModel
+    val categoryTotals by reportViewModel.categoryTotals.collectAsState()
+    val totalSpent by reportViewModel.totalSpent.collectAsState()
+    val isLoading by reportViewModel.isLoading.collectAsState()
+    val hasSearched by reportViewModel.hasSearched.collectAsState()
+    val currentGoal by reportViewModel.currentGoal.collectAsState()
 
     // Date range state
     var startDate by remember { mutableStateOf("") }
     var endDate by remember { mutableStateOf("") }
-    var categoryTotals by remember { mutableStateOf<List<CategoryTotal>>(emptyList()) }
-    var totalSpent by remember { mutableStateOf(0.0) }
-    var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var hasSearched by remember { mutableStateOf(false) }
-
-    // Monthly goal
-    var monthlyGoalMin by remember { mutableStateOf<Double?>(null) }
-    var monthlyGoalMax by remember { mutableStateOf<Double?>(null) }
 
     // Date pickers
     val startDatePickerState = rememberDatePickerState()
@@ -57,16 +56,7 @@ fun ReportScreen() {
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
 
-    // Load categories once
-    LaunchedEffect(Unit) {
-        categories = repository.getCategoriesOnce(userId)
-        val month = java.text.SimpleDateFormat(
-            "yyyy-MM", java.util.Locale.getDefault()
-        ).format(java.util.Date())
-        val goal = repository.getMonthlyGoal(userId, month)
-        monthlyGoalMin = goal?.minGoal
-        monthlyGoalMax = goal?.maxGoal
-    }
+    Log.d("ReportScreen", "Screen loaded")
 
     Column(
         modifier = Modifier
@@ -98,7 +88,9 @@ fun ReportScreen() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                    colors = CardDefaults.cardColors(
+                        containerColor = SurfaceWhite
+                    ),
                     elevation = CardDefaults.cardElevation(2.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -119,7 +111,9 @@ fun ReportScreen() {
                                 readOnly = true,
                                 label = { Text("From") },
                                 trailingIcon = {
-                                    IconButton(onClick = { showStartDatePicker = true }) {
+                                    IconButton(
+                                        onClick = { showStartDatePicker = true }
+                                    ) {
                                         Icon(
                                             Icons.Default.CalendarToday,
                                             null,
@@ -136,7 +130,9 @@ fun ReportScreen() {
                                 readOnly = true,
                                 label = { Text("To") },
                                 trailingIcon = {
-                                    IconButton(onClick = { showEndDatePicker = true }) {
+                                    IconButton(
+                                        onClick = { showEndDatePicker = true }
+                                    ) {
                                         Icon(
                                             Icons.Default.CalendarToday,
                                             null,
@@ -153,34 +149,28 @@ fun ReportScreen() {
 
                         Button(
                             onClick = {
-                                if (startDate.isNotEmpty() && endDate.isNotEmpty()) {
-                                    isLoading = true
-                                    scope.launch {
-                                        val spending = repository.getSpendingByCategory(
-                                            userId, startDate, endDate
-                                        )
-                                        categoryTotals = spending.map { cs ->
-                                            val cat = categories.find { it.id == cs.categoryId }
-                                            CategoryTotal(
-                                                categoryName = cat?.name ?: "Unknown",
-                                                total = cs.total
-                                            )
-                                        }.sortedByDescending { it.total }
-                                        totalSpent = spending.sumOf { it.total }
-                                        isLoading = false
-                                        hasSearched = true
-                                    }
-                                }
+                                Log.d("ReportScreen", "Generate report tapped")
+                                reportViewModel.generateReport(startDate, endDate)
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = BrandGreen
+                            ),
+                            enabled = startDate.isNotEmpty() && endDate.isNotEmpty()
                         ) {
-                            Icon(Icons.Default.BarChart, null, Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.BarChart,
+                                null,
+                                modifier = Modifier.size(18.dp)
+                            )
                             Spacer(Modifier.width(8.dp))
-                            Text("Generate Report", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Generate Report",
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -201,12 +191,14 @@ fun ReportScreen() {
             // ── Results ───────────────────────────────────
             if (hasSearched && !isLoading) {
 
-                // Total spent summary card
+                // Total spent card
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = BrandGreen)
+                        colors = CardDefaults.cardColors(
+                            containerColor = BrandGreen
+                        )
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
@@ -229,18 +221,20 @@ fun ReportScreen() {
                     }
                 }
 
-                // Monthly goal status
-                if (monthlyGoalMin != null && monthlyGoalMax != null) {
+                // Goal status card
+                if (currentGoal != null) {
                     item {
+                        val isOverMax = totalSpent > currentGoal!!.maxGoal
+                        val isUnderMin = totalSpent < currentGoal!!.minGoal
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = when {
-                                    totalSpent < monthlyGoalMin!! -> BrandGreenLight
-                                    totalSpent > monthlyGoalMax!! -> Color(0xFFFFEBEB)
-                                    else -> BrandGreenLight
-                                }
+                                containerColor = if (isOverMax)
+                                    Color(0xFFFFEBEB)
+                                else
+                                    BrandGreenLight
                             )
                         ) {
                             Row(
@@ -250,37 +244,29 @@ fun ReportScreen() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = when {
-                                        totalSpent > monthlyGoalMax!! ->
-                                            Icons.Default.Warning
-                                        else ->
-                                            Icons.Default.CheckCircle
-                                    },
+                                    imageVector = if (isOverMax)
+                                        Icons.Default.Warning
+                                    else
+                                        Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    tint = when {
-                                        totalSpent > monthlyGoalMax!! -> ExpenseRed
-                                        else -> BrandGreen
-                                    },
+                                    tint = if (isOverMax) ExpenseRed else BrandGreen,
                                     modifier = Modifier.size(28.dp)
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text(
                                         text = when {
-                                            totalSpent > monthlyGoalMax!! ->
-                                                "Over maximum goal!"
-                                            totalSpent < monthlyGoalMin!! ->
-                                                "Under minimum goal"
+                                            isOverMax -> "Over maximum goal!"
+                                            isUnderMin -> "Under minimum goal"
                                             else -> "Within goal range ✓"
                                         },
                                         fontWeight = FontWeight.Bold,
-                                        color = when {
-                                            totalSpent > monthlyGoalMax!! -> ExpenseRed
-                                            else -> BrandGreenDark
-                                        }
+                                        color = if (isOverMax) ExpenseRed
+                                        else BrandGreenDark
                                     )
                                     Text(
-                                        "Goal: R${"%.2f".format(monthlyGoalMin)} - R${"%.2f".format(monthlyGoalMax)}",
+                                        "Goal: R${"%.2f".format(currentGoal!!.minGoal)}" +
+                                                " - R${"%.2f".format(currentGoal!!.maxGoal)}",
                                         fontSize = 12.sp,
                                         color = TextSecondary
                                     )
@@ -290,7 +276,7 @@ fun ReportScreen() {
                     }
                 }
 
-                // Category breakdown header
+                // Category breakdown
                 item {
                     Text(
                         "Spending by Category",
@@ -305,7 +291,9 @@ fun ReportScreen() {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                            colors = CardDefaults.cardColors(
+                                containerColor = SurfaceWhite
+                            )
                         ) {
                             Box(
                                 modifier = Modifier
@@ -321,7 +309,6 @@ fun ReportScreen() {
                         }
                     }
                 } else {
-                    // Category total rows
                     items(categoryTotals) { ct ->
                         CategoryTotalCard(
                             categoryTotal = ct,
@@ -343,7 +330,8 @@ fun ReportScreen() {
                 TextButton(onClick = {
                     startDatePickerState.selectedDateMillis?.let {
                         val sdf = java.text.SimpleDateFormat(
-                            "yyyy-MM-dd", java.util.Locale.getDefault()
+                            "yyyy-MM-dd",
+                            java.util.Locale.getDefault()
                         )
                         startDate = sdf.format(java.util.Date(it))
                     }
@@ -351,7 +339,9 @@ fun ReportScreen() {
                 }) { Text("OK", color = BrandGreen) }
             },
             dismissButton = {
-                TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showStartDatePicker = false }) {
+                    Text("Cancel")
+                }
             }
         ) { DatePicker(state = startDatePickerState) }
     }
@@ -364,7 +354,8 @@ fun ReportScreen() {
                 TextButton(onClick = {
                     endDatePickerState.selectedDateMillis?.let {
                         val sdf = java.text.SimpleDateFormat(
-                            "yyyy-MM-dd", java.util.Locale.getDefault()
+                            "yyyy-MM-dd",
+                            java.util.Locale.getDefault()
                         )
                         endDate = sdf.format(java.util.Date(it))
                     }
@@ -372,15 +363,23 @@ fun ReportScreen() {
                 }) { Text("OK", color = BrandGreen) }
             },
             dismissButton = {
-                TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showEndDatePicker = false }) {
+                    Text("Cancel")
+                }
             }
         ) { DatePicker(state = endDatePickerState) }
     }
 }
 
-// ── Category Total Card ───────────────────────────────────
+/**
+ * Card displaying a single category's spending total.
+ * Shows percentage of total spending as a progress bar.
+ */
 @Composable
-fun CategoryTotalCard(categoryTotal: CategoryTotal, totalSpent: Double) {
+fun CategoryTotalCard(
+    categoryTotal: CategoryTotal,
+    totalSpent: Double
+) {
     val percentage = if (totalSpent > 0)
         (categoryTotal.total / totalSpent * 100).toFloat()
     else 0f
@@ -397,12 +396,14 @@ fun CategoryTotalCard(categoryTotal: CategoryTotal, totalSpent: Double) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Category initial circle + name
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
                             .size(36.dp)
-                            .background(BrandGreenLight, RoundedCornerShape(18.dp)),
+                            .background(
+                                BrandGreenLight,
+                                RoundedCornerShape(18.dp)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -434,7 +435,6 @@ fun CategoryTotalCard(categoryTotal: CategoryTotal, totalSpent: Double) {
 
             Spacer(Modifier.height(8.dp))
 
-            // Progress bar showing % of total
             LinearProgressIndicator(
                 progress = { percentage / 100f },
                 modifier = Modifier

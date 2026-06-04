@@ -1,5 +1,6 @@
 package com.example.budgethero.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,46 +14,66 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.budgethero.data.database.BudgetDatabase
-import com.example.budgethero.data.repository.BudgetRepository
-import com.example.budgethero.data.session.SessionManager
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.budgethero.ui.theme.*
-import kotlinx.coroutines.launch
+import com.example.budgethero.ui.viewmodels.GoalsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * GoalsScreen allows users to set minimum and maximum monthly spending goals.
+ * Uses GoalsViewModel following MVVM pattern — no direct repository calls.
+ * Reference: Android MVVM Guide (developer.android.com/topic/architecture)
+ */
 @Composable
-fun GoalsScreen() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val repository = BudgetRepository(BudgetDatabase.getDatabase(context))
-    val sessionManager = SessionManager(context)
-    val userId = sessionManager.getUserId()
+fun GoalsScreen(
+    goalsViewModel: GoalsViewModel = viewModel()
+) {
+    val currentMonth = SimpleDateFormat(
+        "yyyy-MM", Locale.getDefault()
+    ).format(Date())
 
-    // Current month in yyyy-MM format
-    val currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+    // Collect state from ViewModel
+    val currentGoal by goalsViewModel.currentGoal.collectAsState()
+    val saveMessage by goalsViewModel.saveMessage.collectAsState()
 
     // Form state
     var minGoal by remember { mutableStateOf("") }
     var maxGoal by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var successMessage by remember { mutableStateOf("") }
-    var existingMin by remember { mutableStateOf<Double?>(null) }
-    var existingMax by remember { mutableStateOf<Double?>(null) }
 
-    // Load existing goal for this month
+    // Load goal when screen opens
     LaunchedEffect(Unit) {
-        val goal = repository.getMonthlyGoal(userId, currentMonth)
-        if (goal != null) {
-            existingMin = goal.minGoal
-            existingMax = goal.maxGoal
-            minGoal = goal.minGoal.toString()
-            maxGoal = goal.maxGoal.toString()
+        Log.d("GoalsScreen", "Screen opened, loading goal for month: $currentMonth")
+        goalsViewModel.loadGoal(currentMonth)
+    }
+
+    // Pre-fill fields when goal loads
+    LaunchedEffect(currentGoal) {
+        currentGoal?.let {
+            minGoal = it.minGoal.toString()
+            maxGoal = it.maxGoal.toString()
+        }
+    }
+
+    // Handle save result from ViewModel
+    LaunchedEffect(saveMessage) {
+        when {
+            saveMessage == "SUCCESS" -> {
+                successMessage = "Goals saved successfully!"
+                errorMessage = ""
+                goalsViewModel.clearMessage()
+            }
+            saveMessage != null -> {
+                errorMessage = saveMessage!!
+                successMessage = ""
+                goalsViewModel.clearMessage()
+            }
         }
     }
 
@@ -117,11 +138,13 @@ fun GoalsScreen() {
             Spacer(Modifier.height(16.dp))
 
             // ── Existing Goal Display ─────────────────────
-            if (existingMin != null && existingMax != null) {
+            if (currentGoal != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = BrandGreenLight)
+                    colors = CardDefaults.cardColors(
+                        containerColor = BrandGreenLight
+                    )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -134,19 +157,31 @@ fun GoalsScreen() {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Minimum", fontSize = 12.sp, color = BrandGreenDark)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
-                                    "R${"%.2f".format(existingMin)}",
+                                    "Minimum",
+                                    fontSize = 12.sp,
+                                    color = BrandGreenDark
+                                )
+                                Text(
+                                    "R${"%.2f".format(currentGoal!!.minGoal)}",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = BrandGreen
                                 )
                             }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Maximum", fontSize = 12.sp, color = BrandGreenDark)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
-                                    "R${"%.2f".format(existingMax)}",
+                                    "Maximum",
+                                    fontSize = 12.sp,
+                                    color = BrandGreenDark
+                                )
+                                Text(
+                                    "R${"%.2f".format(currentGoal!!.maxGoal)}",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = ExpenseRed
@@ -167,7 +202,7 @@ fun GoalsScreen() {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        if (existingMin != null) "Update Goals" else "Set Goals",
+                        if (currentGoal != null) "Update Goals" else "Set Goals",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = TextPrimary
@@ -175,16 +210,21 @@ fun GoalsScreen() {
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Min goal field
+                    // Minimum goal field
                     OutlinedTextField(
                         value = minGoal,
                         onValueChange = {
                             minGoal = it
                             errorMessage = ""
+                            successMessage = ""
                         },
                         label = { Text("Minimum Goal (R)") },
                         leadingIcon = {
-                            Icon(Icons.Default.TrendingDown, null, tint = BrandGreen)
+                            Icon(
+                                Icons.Default.TrendingDown,
+                                null,
+                                tint = BrandGreen
+                            )
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -202,16 +242,21 @@ fun GoalsScreen() {
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Max goal field
+                    // Maximum goal field
                     OutlinedTextField(
                         value = maxGoal,
                         onValueChange = {
                             maxGoal = it
                             errorMessage = ""
+                            successMessage = ""
                         },
                         label = { Text("Maximum Goal (R)") },
                         leadingIcon = {
-                            Icon(Icons.Default.TrendingUp, null, tint = ExpenseRed)
+                            Icon(
+                                Icons.Default.TrendingUp,
+                                null,
+                                tint = ExpenseRed
+                            )
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -227,14 +272,24 @@ fun GoalsScreen() {
                         }
                     )
 
-                    // Error / success messages
+                    // Error message
                     if (errorMessage.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(errorMessage, color = ExpenseRed, fontSize = 13.sp)
+                        Text(
+                            errorMessage,
+                            color = ExpenseRed,
+                            fontSize = 13.sp
+                        )
                     }
+
+                    // Success message
                     if (successMessage.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(successMessage, color = IncomeGreen, fontSize = 13.sp)
+                        Text(
+                            successMessage,
+                            color = IncomeGreen,
+                            fontSize = 13.sp
+                        )
                     }
 
                     Spacer(Modifier.height(16.dp))
@@ -242,49 +297,36 @@ fun GoalsScreen() {
                     // Save button
                     Button(
                         onClick = {
-                            errorMessage = ""
-                            successMessage = ""
-                            // Validation
-                            val min = minGoal.toDoubleOrNull()
-                            val max = maxGoal.toDoubleOrNull()
-                            when {
-                                minGoal.isBlank() || maxGoal.isBlank() ->
-                                    errorMessage = "Please fill in both fields"
-                                min == null || max == null ->
-                                    errorMessage = "Please enter valid numbers"
-                                min < 0 || max < 0 ->
-                                    errorMessage = "Goals cannot be negative"
-                                min >= max ->
-                                    errorMessage = "Minimum must be less than maximum"
-                                else -> {
-                                    scope.launch {
-                                        repository.setMonthlyGoal(
-                                            userId, currentMonth, min, max
-                                        )
-                                        existingMin = min
-                                        existingMax = max
-                                        successMessage = "Goals saved successfully!"
-                                    }
-                                }
-                            }
+                            Log.d("GoalsScreen", "Save button tapped")
+                            goalsViewModel.saveGoal(
+                                currentMonth, minGoal, maxGoal
+                            )
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BrandGreen
+                        )
                     ) {
-                        Icon(Icons.Default.Save, null, Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Save,
+                            null,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (existingMin != null) "Update Goals" else "Save Goals",
+                            if (currentGoal != null) "Update Goals"
+                            else "Save Goals",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                     }
                 }
             }
+
+            Spacer(Modifier.height(80.dp))
         }
     }
 }
-
