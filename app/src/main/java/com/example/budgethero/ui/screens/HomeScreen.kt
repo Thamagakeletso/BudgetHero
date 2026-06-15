@@ -1,5 +1,6 @@
 package com.example.budgethero.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,71 +20,114 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.budgethero.data.database.Expense
 import com.example.budgethero.data.database.Category
-import com.example.budgethero.data.models.TransactionCategory
+import com.example.budgethero.data.database.Expense
 import com.example.budgethero.ui.theme.*
-import com.example.budgethero.ui.viewmodels.ExpenseViewModel
 import com.example.budgethero.ui.viewmodels.CategoryViewModel
-import android.util.Log
+import com.example.budgethero.ui.viewmodels.ExpenseViewModel
 
 /**
  * HomeScreen displays the user's financial summary.
  * Shows real balance from RoomDB, budget progress, and recent expenses.
- * Reference: Android Jetpack Compose documentation (developer.android.com/jetpack/compose)
+ * Reference: Android Jetpack Compose
+ * (developer.android.com/jetpack/compose)
  */
 @Composable
 fun HomeScreen(
     onLogout: () -> Unit = {},
+    onNavigateToReport: () -> Unit = {},
+    onNavigateToStats: () -> Unit = {},
+    onNavigateToBadges: () -> Unit = {},
+    onNavigateToAdd: () -> Unit = {},
+    onNavigateToGoals: () -> Unit = {},
     expenseViewModel: ExpenseViewModel = viewModel(),
     categoryViewModel: CategoryViewModel = viewModel()
-) {
-    // Collect real data from database
+){
+    // Collect real data from RoomDB
     val expenses by expenseViewModel.expenses.collectAsState()
     val categories by categoryViewModel.categories.collectAsState()
 
-    // Calculate real totals from database
+    // Calculate real balance from database
     val totalIncome = expenses.filter { it.amount > 0 }.sumOf { it.amount }
-    val totalExpenses = expenses.filter { it.amount < 0 }.sumOf { Math.abs(it.amount) }
+    val totalExpenses = expenses
+        .filter { it.amount < 0 }
+        .sumOf { Math.abs(it.amount) }
     val totalBalance = totalIncome - totalExpenses
 
-    // Monthly spending for progress bar
+    // Monthly spending
     val currentMonth = java.text.SimpleDateFormat(
         "yyyy-MM", java.util.Locale.getDefault()
     ).format(java.util.Date())
 
-    val monthlyExpenses = expenses.filter { expense ->
+    val monthlySpent = expenses.filter { expense ->
         expense.date.startsWith(currentMonth) && expense.amount < 0
     }.sumOf { Math.abs(it.amount) }
 
-    // Show only last 5 expenses on home screen
     val recentExpenses = expenses.take(5)
 
-    // Log screen load for debugging
-    Log.d("HomeScreen", "Loaded ${expenses.size} expenses, balance: R$totalBalance")
+    Log.d("HomeScreen",
+        "Loaded ${expenses.size} expenses, balance: R$totalBalance")
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundGray),
+            .background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         item { HomeTopBar(onLogout = onLogout) }
 
-        item {
-            BalanceCard(balance = totalBalance)
-        }
+        item { BalanceCard(balance = totalBalance) }
 
         item {
             BudgetProgressCard(
-                spent = monthlyExpenses,
-                total = if (monthlyExpenses > 0) monthlyExpenses * 1.5 else 3500.0
+                spent = monthlySpent,
+                total = if (monthlySpent > 0) monthlySpent * 1.5
+                else 3500.0
             )
         }
 
         item { Spacer(modifier = Modifier.height(16.dp)) }
-        item { ActionButtonsRow() }
+
+        item {
+            ActionButtonsRow(
+                onAddExpense = onNavigateToAdd,
+                onViewGoals = onNavigateToGoals,
+                onViewReport = onNavigateToReport
+            )
+        }
         item { Spacer(modifier = Modifier.height(16.dp)) }
+
+        // Quick access cards row
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                QuickAccessCard(
+                    title = "Report",
+                    icon = Icons.Default.BarChart,
+                    onClick = onNavigateToReport,
+                    modifier = Modifier.weight(1f)
+                )
+                QuickAccessCard(
+                    title = "Stats",
+                    icon = Icons.Default.PieChart,
+                    onClick = onNavigateToStats,
+                    modifier = Modifier.weight(1f)
+                )
+                QuickAccessCard(
+                    title = "Badges",
+                    icon = Icons.Default.EmojiEvents,
+                    onClick = onNavigateToBadges,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item { Spacer(modifier = Modifier.height(16.dp)) }
+
         item { RecentTransactionsHeader() }
 
         if (recentExpenses.isEmpty()) {
@@ -93,7 +137,9 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceWhite)
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 ) {
                     Column(
                         modifier = Modifier
@@ -110,12 +156,13 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "No expenses yet",
-                            color = TextSecondary,
-                            fontSize = 14.sp
+                            color = MaterialTheme.colorScheme.onSurface
+                                .copy(alpha = 0.6f)
                         )
                         Text(
                             "Tap Add to log your first expense",
-                            color = TextSecondary,
+                            color = MaterialTheme.colorScheme.onSurface
+                                .copy(alpha = 0.4f),
                             fontSize = 12.sp
                         )
                     }
@@ -130,7 +177,7 @@ fun HomeScreen(
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    color = CardBorder,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
                     thickness = 0.5.dp
                 )
             }
@@ -139,55 +186,117 @@ fun HomeScreen(
 }
 
 /**
- * Top bar with BudgetHero logo and logout button.
+ * Quick access card for navigating to Report, Stats and Badges.
+ */
+@Composable
+fun QuickAccessCard(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = BrandGreenLight
+        ),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                contentDescription = title,
+                tint = BrandGreen,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                title,
+                fontSize = 11.sp,
+                color = BrandGreenDark,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+/**
+ * Top bar with BudgetHero logo, dark mode toggle and logout button.
+ * Dark mode uses MaterialTheme.colorScheme for proper theming.
  */
 @Composable
 fun HomeTopBar(onLogout: () -> Unit = {}) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    // Get dark mode state from CompositionLocal
+    val darkModeState = LocalDarkMode.current
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.AccountBalanceWallet,
-                contentDescription = "Logo",
-                tint = BrandGreen,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "BudgetHero",
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                color = TextPrimary
-            )
-        }
-        Row {
-            BadgedBox(badge = { Badge() }) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Notifications,
-                    contentDescription = "Notifications",
-                    tint = TextSecondary
+                    imageVector = Icons.Default.AccountBalanceWallet,
+                    contentDescription = "Logo",
+                    tint = BrandGreen,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "BudgetHero",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(onClick = onLogout) {
-                Icon(
-                    imageVector = Icons.Default.Logout,
-                    contentDescription = "Logout",
-                    tint = TextSecondary
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Dark mode toggle button
+                IconButton(onClick = {
+                    darkModeState.value = !darkModeState.value
+                    Log.d("HomeScreen",
+                        "Dark mode: ${darkModeState.value}")
+                }) {
+                    Icon(
+                        imageVector = if (darkModeState.value)
+                            Icons.Default.LightMode
+                        else
+                            Icons.Default.DarkMode,
+                        contentDescription = "Toggle dark mode",
+                        tint = if (darkModeState.value)
+                            Color.Yellow
+                        else
+                            MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                // Logout button
+                IconButton(onClick = onLogout) {
+                    Icon(
+                        imageVector = Icons.Default.Logout,
+                        contentDescription = "Logout",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Balance card showing total balance in Rands.
- * Balance is calculated from real RoomDB expense data.
+ * Balance card showing total balance calculated from RoomDB.
+ * Uses MaterialTheme colors for dark mode support.
  */
 @Composable
 fun BalanceCard(balance: Double) {
@@ -209,7 +318,6 @@ fun BalanceCard(balance: Double) {
                 fontSize = 14.sp
             )
             Spacer(modifier = Modifier.height(6.dp))
-            // ✅ Fixed: uses R instead of $
             Text(
                 text = "R${"%.2f".format(balance)}",
                 color = Color.White,
@@ -221,12 +329,14 @@ fun BalanceCard(balance: Double) {
 }
 
 /**
- * Progress card showing monthly spending vs budget.
- * Uses real expense data from RoomDB.
+ * Budget progress card showing monthly spending vs budget.
+ * Adapts to dark mode using MaterialTheme colors.
  */
 @Composable
 fun BudgetProgressCard(spent: Double, total: Double) {
-    val progress = if (total > 0) (spent / total).toFloat().coerceIn(0f, 1f) else 0f
+    val progress = if (total > 0)
+        (spent / total).toFloat().coerceIn(0f, 1f)
+    else 0f
     val percent = (progress * 100).toInt()
     val remaining = total - spent
 
@@ -235,7 +345,9 @@ fun BudgetProgressCard(spent: Double, total: Double) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -243,7 +355,7 @@ fun BudgetProgressCard(spent: Double, total: Double) {
                 text = "MONTHLY BUDGET",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 letterSpacing = 1.sp
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -253,17 +365,17 @@ fun BudgetProgressCard(spent: Double, total: Double) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    // ✅ Fixed: R instead of $
                     Text(
                         text = "R${"%.2f".format(spent)}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = TextPrimary
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = " / R${"%.0f".format(total)}",
                         fontSize = 14.sp,
-                        color = TextSecondary
+                        color = MaterialTheme.colorScheme.onSurface
+                            .copy(alpha = 0.6f)
                     )
                 }
                 Text(
@@ -284,11 +396,10 @@ fun BudgetProgressCard(spent: Double, total: Double) {
                 trackColor = BrandGreenLight
             )
             Spacer(modifier = Modifier.height(8.dp))
-            // ✅ Fixed: R instead of $
             Text(
-                text = "You have R${"%.0f".format(remaining)} remaining for this month.",
+                text = "You have R${"%.0f".format(remaining)} remaining.",
                 fontSize = 12.sp,
-                color = TextSecondary
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
         }
     }
@@ -298,19 +409,96 @@ fun BudgetProgressCard(spent: Double, total: Double) {
  * Action buttons row — Add Expense, Transfer, Set Budget.
  */
 @Composable
-fun ActionButtonsRow() {
+fun ActionButtonsRow(
+    onAddExpense: () -> Unit = {},
+    onViewGoals: () -> Unit = {},
+    onViewReport: () -> Unit = {}
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        ActionButton("ADD EXPENSE", Icons.Default.Add, true, Modifier.weight(1f))
-        ActionButton("TRANSFER", Icons.Default.SwapHoriz, false, Modifier.weight(1f))
-        ActionButton("SET BUDGET", Icons.Default.Settings, false, Modifier.weight(1f))
+        // Add Expense — navigates to Add screen
+        Button(
+            onClick = onAddExpense,
+            modifier = Modifier
+                .weight(1f)
+                .height(60.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = BrandGreen
+            )
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add Expense",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    "ADD EXPENSE",
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // Goals button — navigates to Goals screen
+        OutlinedButton(
+            onClick = onViewGoals,
+            modifier = Modifier
+                .weight(1f)
+                .height(60.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.TrackChanges,
+                    contentDescription = "Goals",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    "GOALS",
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // Report button — navigates to Report screen
+        OutlinedButton(
+            onClick = onViewReport,
+            modifier = Modifier
+                .weight(1f)
+                .height(60.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.BarChart,
+                    contentDescription = "Report",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    "REPORT",
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
 }
-
 @Composable
 fun ActionButton(
     label: String,
@@ -323,10 +511,16 @@ fun ActionButton(
             onClick = {},
             modifier = modifier.height(60.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandGreen)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = BrandGreen
+            )
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(18.dp)
+                )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(label, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             }
@@ -336,10 +530,16 @@ fun ActionButton(
             onClick = {},
             modifier = modifier.height(60.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(18.dp)
+                )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(label, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             }
@@ -360,7 +560,7 @@ fun RecentTransactionsHeader() {
             text = "Recent Transactions",
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
-            color = TextPrimary
+            color = MaterialTheme.colorScheme.onBackground
         )
         TextButton(onClick = {}) {
             Text("View All", color = BrandGreen, fontSize = 13.sp)
@@ -370,7 +570,7 @@ fun RecentTransactionsHeader() {
 
 /**
  * Single transaction row showing real expense data from RoomDB.
- * Displays category name, amount in Rands, and date.
+ * Uses MaterialTheme colors for dark mode compatibility.
  */
 @Composable
 fun RealTransactionRow(expense: Expense, category: Category?) {
@@ -380,7 +580,6 @@ fun RealTransactionRow(expense: Expense, category: Category?) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Category icon circle
         Box(
             modifier = Modifier
                 .size(44.dp)
@@ -403,16 +602,15 @@ fun RealTransactionRow(expense: Expense, category: Category?) {
                 text = expense.description,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = TextPrimary
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "${category?.name ?: "Unknown"} • ${expense.date}",
                 fontSize = 12.sp,
-                color = TextSecondary
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
         }
 
-        // ✅ Fixed: R instead of $
         val isIncome = expense.amount > 0
         Text(
             text = if (isIncome)
